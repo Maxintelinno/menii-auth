@@ -25,34 +25,61 @@ func NewAuthHandler(svc service.AuthService) *AuthHandler {
 func (h *AuthHandler) Register(c echo.Context) error {
 	req := new(models.RegisterRequest)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "INVALID_REQUEST",
+			Message: "invalid request body",
+		})
 	}
 
 	if err := h.validate.Struct(req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: err.Error(),
+		})
 	}
 
-	if err := h.svc.Register(req); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	res, err := h.svc.Register(req)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "ERROR",
+			Message: err.Error(),
+		})
 	}
 
-	return c.JSON(http.StatusCreated, map[string]string{"message": "user registered successfully"})
+	return c.JSON(http.StatusOK, models.APIResponse{
+		Code:    "SUCCESS",
+		Message: "register success",
+		Data:    res,
+	})
 }
 
 func (h *AuthHandler) Login(c echo.Context) error {
 	req := new(models.LoginRequest)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "INVALID_REQUEST",
+			Message: "invalid request body",
+		})
 	}
 
 	if err := h.validate.Struct(req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: err.Error(),
+		})
 	}
 
 	res, err := h.svc.Login(req)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		return c.JSON(http.StatusUnauthorized, models.APIResponse{
+			Code:    "UNAUTHORIZED",
+			Message: err.Error(),
+		})
 	}
 
-	return c.JSON(http.StatusOK, res)
+	return c.JSON(http.StatusOK, models.APIResponse{
+		Code:    "SUCCESS",
+		Message: "login success",
+		Data:    res,
+	})
 }

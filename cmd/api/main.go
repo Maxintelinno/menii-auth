@@ -33,13 +33,20 @@ func main() {
 	database := db.GetDB()
 
 	// Auto-migrate models
-	if err := database.AutoMigrate(&models.User{}); err != nil {
+	if err := database.AutoMigrate(
+		&models.User{},
+		&models.Role{},
+		&models.UserRole{},
+		&models.ClientProfile{},
+		&models.ConsentLog{},
+		&models.OtpRequest{},
+	); err != nil {
 		log.Fatal("Failed to auto-migrate database")
 	}
 
 	// Initialize components
 	userRepo := repository.NewUserRepository(database)
-	authSvc := service.NewAuthService(userRepo, &cfg.JWT)
+	authSvc := service.NewAuthService(database, userRepo, &cfg.JWT)
 	authHandler := handler.NewAuthHandler(authSvc)
 
 	// Initialize Echo

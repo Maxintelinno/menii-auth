@@ -3,33 +3,56 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type User struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
-	Email     string         `gorm:"uniqueIndex;not null" json:"email" validate:"required,email"`
-	Password  string         `gorm:"not null" json:"-"`
-	FirstName string         `json:"first_name"`
-	LastName  string         `json:"last_name"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	ID           uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Phone        *string        `gorm:"uniqueIndex" json:"phone"`
+	Email        *string        `gorm:"uniqueIndex" json:"email"`
+	PasswordHash string         `gorm:"not null" json:"-"`
+	Status       string         `gorm:"not null;default:'PENDING_VERIFY'" json:"status"`
+	IsActive     bool           `gorm:"not null;default:true" json:"is_active"`
+	LastLoginAt  *time.Time     `json:"last_login_at"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+
+	// Relationships
+	ClientProfile *ClientProfile `json:"client_profile,omitempty"`
+	Roles         []Role         `gorm:"many2many:user_roles;" json:"roles,omitempty"`
 }
 
 type LoginRequest struct {
-	Email    string `json:"email" validate:"required,email"`
+	Phone    string `json:"phone" validate:"required"`
 	Password string `json:"password" validate:"required"`
 }
 
 type RegisterRequest struct {
-	Email     string `json:"email" validate:"required,email"`
-	Password  string `json:"password" validate:"required,min=8"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
+	Phone           string `json:"phone" validate:"required"`
+	Email           string `json:"email" validate:"omitempty,email"`
+	Password        string `json:"password" validate:"required,min=8"`
+	FirstName       string `json:"first_name" validate:"required"`
+	LastName        string `json:"last_name" validate:"required"`
+	AcceptedTerms   bool   `json:"accepted_terms" validate:"required,oneof=true"`
+	AcceptedPrivacy bool   `json:"accepted_privacy" validate:"required,oneof=true"`
+}
+
+type RegisterResponseData struct {
+	UserID           uuid.UUID `json:"user_id"`
+	Status           string    `json:"status"`
+	OTPReferenceCode string    `json:"otp_reference_code"`
+	OTPExpiresInSec  int       `json:"otp_expires_in_sec"`
 }
 
 type TokenResponse struct {
 	Token        string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
+}
+
+type APIResponse struct {
+	Code    string      `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
 }
