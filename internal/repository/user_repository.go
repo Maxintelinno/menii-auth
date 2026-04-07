@@ -20,6 +20,8 @@ type UserRepository interface {
 	CreateSession(session *models.UserSession) error
 	FindSessionByID(id uuid.UUID) (*models.UserSession, error)
 	UpdateSession(session *models.UserSession) error
+	GetLatestOtpRequest(phone string, purpose string) (*models.OtpRequest, error)
+	CountOtpRequestsToday(phone string) (int64, error)
 	RevokeSession(sessionID uuid.UUID, reason string) error
 	WithTx(tx *gorm.DB) UserRepository
 }
@@ -108,4 +110,24 @@ func (r *userRepository) FindSessionByID(id uuid.UUID) (*models.UserSession, err
 
 func (r *userRepository) UpdateSession(session *models.UserSession) error {
 	return r.db.Save(session).Error
+}
+
+func (r *userRepository) GetLatestOtpRequest(phone string, purpose string) (*models.OtpRequest, error) {
+	var otp models.OtpRequest
+	if err := r.db.Where("phone = ? AND purpose = ?", phone, purpose).
+		Order("created_at DESC").First(&otp).Error; err != nil {
+		return nil, err
+	}
+	return &otp, nil
+}
+
+func (r *userRepository) CountOtpRequestsToday(phone string) (int64, error) {
+	var count int64
+	today := time.Now().Truncate(24 * time.Hour)
+	if err := r.db.Model(&models.OtpRequest{}).
+		Where("phone = ? AND created_at >= ?", phone, today).
+		Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
 }

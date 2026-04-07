@@ -40,6 +40,17 @@ type LogoutRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+type OtpRequestPayload struct {
+	Phone   string `json:"phone" validate:"required"`
+	Purpose string `json:"purpose" validate:"required,oneof=REGISTER FORGOT_PASSWORD PHONE_VERIFY"`
+}
+
+type OtpResponseData struct {
+	ReferenceCode string `json:"reference_code"`
+	ExpiresInSec  int    `json:"expires_in_sec"`
+	RetryAfterSec int    `json:"retry_after_sec"`
+}
+
 type RegisterRequest struct {
 	Phone           string `json:"phone" validate:"required"`
 	Email           string `json:"email" validate:"omitempty,email"`

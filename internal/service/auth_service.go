@@ -21,12 +21,21 @@ import (
 	"gorm.io/gorm"
 )
 
+type OtpRateLimitError struct {
+	RetryAfterSec int
+}
+
+func (e *OtpRateLimitError) Error() string {
+	return fmt.Sprintf("OTP_RATE_LIMITED: please wait %d seconds", e.RetryAfterSec)
+}
+
 var (
 	ErrInvalidCredentials  = errors.New("INVALID_CREDENTIALS")
 	ErrAccountNotVerified  = errors.New("ACCOUNT_NOT_VERIFIED")
 	ErrAccountSuspended    = errors.New("ACCOUNT_SUSPENDED")
 	ErrInvalidRefreshToken = errors.New("INVALID_REFRESH_TOKEN")
 	ErrSessionExpired      = errors.New("SESSION_EXPIRED")
+	ErrUserNotFound        = errors.New("USER_NOT_FOUND")
 )
 
 type AuthService interface {
@@ -34,6 +43,7 @@ type AuthService interface {
 	Login(req *models.LoginRequest) (*models.LoginResponseData, error)
 	Logout(sessionID uuid.UUID) error
 	RefreshToken(req *models.RefreshRequest) (*models.LoginResponseData, error)
+	RequestOTP(req *models.OtpRequestPayload) (*models.OtpResponseData, error)
 }
 
 type authService struct {
@@ -350,6 +360,68 @@ func (s *authService) RefreshToken(req *models.RefreshRequest) (*models.LoginRes
 	}
 
 	return res, nil
+}
+
+func (s *authService) RequestOTP(req *models.OtpRequestPayload) (*models.OtpResponseData, error) {
+	// 1. Validate User based on Purpose
+	user, err := s.repo.FindByPhone(req.Phone)
+	if req.Purpose == "REGISTER" {
+		if err != nil || user.Status != "PENDING_VERIFY" {
+			return nil, errors.New("invalid registration status")
+		}
+	} else if req.Purpose == "FORGOT_PASSWORD" {
+		if err != nil {
+			return nil, ErrUserNotFound
+		}
+	} else {
+		// PHONE_VERIFY
+		if err != nil {
+			return nil, ErrUserNotFound
+		}
+	}
+
+	// 2. Daily Limit Check (e.g., max 10 per day)
+	dailyCount, _ := s.repo.CountOtpRequestsToday(req.Phone)
+	if dailyCount >= 10 {
+		return nil, errors.New("daily otp limit exceeded")
+	}
+
+	// 3. Rate Limit Check (60 seconds cooldown)
+	latest, err := s.repo.GetLatestOtpRequest(req.Phone, req.Purpose)
+	if err == nil {
+		elapsed := time.Since(latest.CreatedAt)
+		if elapsed < 60*time.Second {
+			return nil, &OtpRateLimitError{RetryAfterSec: int(60 - elapsed.Seconds())}
+		}
+	}
+
+	// 4. Generate & Save OTP
+	otpCode := generateOTP()
+	refCode := generateRefCode()
+	otpHash, _ := bcrypt.GenerateFromPassword([]byte(otpCode), bcrypt.DefaultCost)
+
+	otpReq := &models.OtpRequest{
+		Phone:         &req.Phone,
+		OtpCodeHash:   string(otpHash),
+		ReferenceCode: refCode,
+		Purpose:       req.Purpose,
+		TargetUserID:  user.ID,
+		ExpiredAt:     time.Now().Add(5 * time.Minute),
+		RequestStatus: "PENDING",
+	}
+
+	if err := s.db.Create(otpReq).Error; err != nil {
+		return nil, err
+	}
+
+	// 5. Mock SMS Send
+	logger.GetLogger().Info(fmt.Sprintf("Sending OTP: %s to %s (Purpose: %s, Ref: %s)", otpCode, req.Phone, req.Purpose, refCode))
+
+	return &models.OtpResponseData{
+		ReferenceCode: refCode,
+		ExpiresInSec:  300,
+		RetryAfterSec: 60,
+	}, nil
 }
 
 func (s *authService) generateToken(userID, sessionID uuid.UUID, tokenType string, roles []string, duration time.Duration) (string, error) {

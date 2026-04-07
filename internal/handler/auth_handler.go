@@ -174,3 +174,52 @@ func (h *AuthHandler) Refresh(c echo.Context) error {
 		Data:    res,
 	})
 }
+
+func (h *AuthHandler) RequestOTP(c echo.Context) error {
+	req := new(models.OtpRequestPayload)
+	if err := c.Bind(req); err != nil {
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "INVALID_REQUEST",
+			Message: "invalid request body",
+		})
+	}
+
+	if err := h.validate.Struct(req); err != nil {
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: err.Error(),
+		})
+	}
+
+	res, err := h.svc.RequestOTP(req)
+	if err != nil {
+		if rateLimitErr, ok := err.(*service.OtpRateLimitError); ok {
+			return c.JSON(http.StatusTooManyRequests, models.APIResponse{
+				Code:    "OTP_RATE_LIMITED",
+				Message: "please wait before requesting another otp",
+				Data: map[string]int{
+					"retry_after_sec": rateLimitErr.RetryAfterSec,
+				},
+			})
+		}
+
+		switch err {
+		case service.ErrUserNotFound:
+			return c.JSON(http.StatusNotFound, models.APIResponse{
+				Code:    "USER_NOT_FOUND",
+				Message: "user not found",
+			})
+		default:
+			return c.JSON(http.StatusInternalServerError, models.APIResponse{
+				Code:    "ERROR",
+				Message: err.Error(),
+			})
+		}
+	}
+
+	return c.JSON(http.StatusOK, models.APIResponse{
+		Code:    "SUCCESS",
+		Message: "otp sent",
+		Data:    res,
+	})
+}
