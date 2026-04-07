@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"menii-auth/internal/models"
 
 	"github.com/google/uuid"
@@ -11,8 +13,11 @@ type UserRepository interface {
 	Create(user *models.User) error
 	FindByEmail(email string) (*models.User, error)
 	FindByPhone(phone string) (*models.User, error)
+	FindByUsername(username string) (*models.User, error)
 	FindByID(id uuid.UUID) (*models.User, error)
 	GetRoleByCode(code string) (*models.Role, error)
+	UpdateLastLogin(userID uuid.UUID) error
+	CreateSession(session *models.UserSession) error
 	WithTx(tx *gorm.DB) UserRepository
 }
 
@@ -34,7 +39,7 @@ func (r *userRepository) Create(user *models.User) error {
 
 func (r *userRepository) FindByEmail(email string) (*models.User, error) {
 	var user models.User
-	if err := r.db.Where("email = ?", email).First(&user).Error; err != nil {
+	if err := r.db.Preload("Roles").Where("email = ?", email).First(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
@@ -42,7 +47,15 @@ func (r *userRepository) FindByEmail(email string) (*models.User, error) {
 
 func (r *userRepository) FindByPhone(phone string) (*models.User, error) {
 	var user models.User
-	if err := r.db.Where("phone = ?", phone).First(&user).Error; err != nil {
+	if err := r.db.Preload("Roles").Where("phone = ?", phone).First(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *userRepository) FindByUsername(username string) (*models.User, error) {
+	var user models.User
+	if err := r.db.Preload("Roles").Where("phone = ? OR email = ?", username, username).First(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
@@ -50,7 +63,7 @@ func (r *userRepository) FindByPhone(phone string) (*models.User, error) {
 
 func (r *userRepository) FindByID(id uuid.UUID) (*models.User, error) {
 	var user models.User
-	if err := r.db.First(&user, "id = ?", id).Error; err != nil {
+	if err := r.db.Preload("Roles").First(&user, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
@@ -62,4 +75,13 @@ func (r *userRepository) GetRoleByCode(code string) (*models.Role, error) {
 		return nil, err
 	}
 	return &role, nil
+}
+
+func (r *userRepository) UpdateLastLogin(userID uuid.UUID) error {
+	now := time.Now()
+	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("last_login_at", &now).Error
+}
+
+func (r *userRepository) CreateSession(session *models.UserSession) error {
+	return r.db.Create(session).Error
 }

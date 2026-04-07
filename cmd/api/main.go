@@ -40,6 +40,7 @@ func main() {
 		&models.ClientProfile{},
 		&models.ConsentLog{},
 		&models.OtpRequest{},
+		&models.UserSession{},
 	); err != nil {
 		log.Fatal("Failed to auto-migrate database")
 	}

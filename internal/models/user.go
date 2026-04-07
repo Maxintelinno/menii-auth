@@ -25,8 +25,11 @@ type User struct {
 }
 
 type LoginRequest struct {
-	Phone    string `json:"phone" validate:"required"`
-	Password string `json:"password" validate:"required"`
+	Username   string `json:"username" validate:"required"`
+	Password   string `json:"password" validate:"required"`
+	DeviceID   string `json:"device_id"`
+	DeviceName string `json:"device_name"`
+	Platform   string `json:"platform"`
 }
 
 type RegisterRequest struct {
@@ -44,6 +47,27 @@ type RegisterResponseData struct {
 	Status           string    `json:"status"`
 	OTPReferenceCode string    `json:"otp_reference_code"`
 	OTPExpiresInSec  int       `json:"otp_expires_in_sec"`
+}
+
+type LoginResponseData struct {
+	User   UserInfoResponse `json:"user"`
+	Tokens TokensResponse   `json:"tokens"`
+}
+
+type UserInfoResponse struct {
+	UserID uuid.UUID `json:"user_id"`
+	Phone  string    `json:"phone"`
+	Email  string    `json:"email"`
+	Status string    `json:"status"`
+	Roles  []string  `json:"roles"`
+}
+
+type TokensResponse struct {
+	AccessToken       string `json:"access_token"`
+	RefreshToken      string `json:"refresh_token"`
+	TokenType         string `json:"token_type"`
+	ExpiresIn         int    `json:"expires_in"`
+	RefreshExpiresIn  int    `json:"refresh_expires_in"`
 }
 
 type TokenResponse struct {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -22,7 +23,7 @@ import (
 
 type AuthService interface {
 	Register(req *models.RegisterRequest) (*models.RegisterResponseData, error)
-	Login(req *models.LoginRequest) (*models.TokenResponse, error)
+	Login(req *models.LoginRequest) (*models.LoginResponseData, error)
 }
 
 type authService struct {
@@ -154,32 +155,98 @@ func (s *authService) Register(req *models.RegisterRequest) (*models.RegisterRes
 	return &responseData, nil
 }
 
-func (s *authService) Login(req *models.LoginRequest) (*models.TokenResponse, error) {
-	// Traditional email-based login was here, but requirements shifted to Phone.
-	// We'll keep it compatible or update it if needed.
-	user, err := s.repo.FindByPhone(req.Phone)
+func (s *authService) Login(req *models.LoginRequest) (*models.LoginResponseData, error) {
+	// 1. Find user by phone or email
+	user, err := s.repo.FindByUsername(req.Username)
 	if err != nil {
-		return nil, errors.New("invalid phone or password")
+		return nil, errors.New("invalid username or password")
 	}
 
+	// 2. Check credentials
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		return nil, errors.New("invalid phone or password")
+		return nil, errors.New("invalid username or password")
 	}
 
-	token, err := s.generateToken(user.ID)
+	// 3. Check status & is_active
+	if !user.IsActive {
+		return nil, errors.New("user account is inactive")
+	}
+	if user.Status == "PENDING_VERIFY" {
+		return nil, errors.New("user account is pending verification")
+	}
+
+	// 4. Prepare Roles
+	roleCodes := make([]string, len(user.Roles))
+	for i, r := range user.Roles {
+		roleCodes[i] = r.Code
+	}
+
+	// 5. Generate Session ID
+	sessionID := uuid.New()
+
+	// 6. Generate Tokens
+	accessToken, err := s.generateToken(user.ID, sessionID, "access", roleCodes, 15*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	refreshToken, err := s.generateToken(user.ID, sessionID, "refresh", nil, 30*24*time.Hour)
 	if err != nil {
 		return nil, err
 	}
 
-	return &models.TokenResponse{
-		Token: token,
-	}, nil
+	// 7. Store Refresh Token in Session
+	rfHash := hashRefreshToken(refreshToken)
+	session := &models.UserSession{
+		ID:               sessionID,
+		UserID:           user.ID,
+		RefreshTokenHash: rfHash,
+		DeviceID:         req.DeviceID,
+		DeviceName:       req.DeviceName,
+		Platform:         req.Platform,
+		ExpiredAt:        time.Now().Add(30 * 24 * time.Hour),
+	}
+
+	if err := s.repo.CreateSession(session); err != nil {
+		return nil, err
+	}
+
+	// 8. Update Last Login
+	_ = s.repo.UpdateLastLogin(user.ID)
+
+	// 9. Prepare Response
+	res := &models.LoginResponseData{
+		User: models.UserInfoResponse{
+			UserID: user.ID,
+			Phone:  *user.Phone,
+			Status: user.Status,
+			Roles:  roleCodes,
+		},
+		Tokens: models.TokensResponse{
+			AccessToken:      accessToken,
+			RefreshToken:     refreshToken,
+			TokenType:        "Bearer",
+			ExpiresIn:        900,
+			RefreshExpiresIn: 2592000,
+		},
+	}
+	if user.Email != nil {
+		res.User.Email = *user.Email
+	}
+
+	return res, nil
 }
 
-func (s *authService) generateToken(userID uuid.UUID) (string, error) {
+func (s *authService) generateToken(userID, sessionID uuid.UUID, tokenType string, roles []string, duration time.Duration) (string, error) {
 	claims := jwt.MapClaims{
-		"user_id": userID.String(),
-		"exp":     time.Now().Add(time.Hour * time.Duration(s.config.ExpiryHours)).Unix(),
+		"sub":        userID.String(),
+		"session_id": sessionID.String(),
+		"token_type": tokenType,
+		"iat":        time.Now().Unix(),
+		"exp":        time.Now().Add(duration).Unix(),
+	}
+
+	if roles != nil {
+		claims["roles"] = roles
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -209,4 +276,9 @@ func generateRefCode() string {
 	b := make([]byte, 3)
 	rand.Read(b)
 	return fmt.Sprintf("OTP-%s", hex.EncodeToString(b))
+}
+
+func hashRefreshToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }

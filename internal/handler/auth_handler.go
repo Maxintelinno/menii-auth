@@ -46,7 +46,7 @@ func (h *AuthHandler) Register(c echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, models.APIResponse{
+	return c.JSON(http.StatusCreated, models.APIResponse{
 		Code:    "SUCCESS",
 		Message: "register success",
 		Data:    res,
