@@ -71,10 +71,31 @@ func (h *AuthHandler) Login(c echo.Context) error {
 
 	res, err := h.svc.Login(req)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, models.APIResponse{
-			Code:    "UNAUTHORIZED",
-			Message: err.Error(),
-		})
+		switch err {
+		case service.ErrInvalidCredentials:
+			return c.JSON(http.StatusUnauthorized, models.APIResponse{
+				Code:    "INVALID_CREDENTIALS",
+				Message: "invalid username or password",
+			})
+		case service.ErrAccountNotVerified:
+			return c.JSON(http.StatusForbidden, models.APIResponse{
+				Code:    "ACCOUNT_NOT_VERIFIED",
+				Message: "account is not verified",
+				Data: map[string]string{
+					"next_action": "VERIFY_OTP",
+				},
+			})
+		case service.ErrAccountSuspended:
+			return c.JSON(http.StatusForbidden, models.APIResponse{
+				Code:    "ACCOUNT_SUSPENDED",
+				Message: "account has been suspended",
+			})
+		default:
+			return c.JSON(http.StatusInternalServerError, models.APIResponse{
+				Code:    "ERROR",
+				Message: err.Error(),
+			})
+		}
 	}
 
 	return c.JSON(http.StatusOK, models.APIResponse{

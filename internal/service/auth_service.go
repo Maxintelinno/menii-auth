@@ -21,6 +21,12 @@ import (
 	"gorm.io/gorm"
 )
 
+var (
+	ErrInvalidCredentials = errors.New("INVALID_CREDENTIALS")
+	ErrAccountNotVerified = errors.New("ACCOUNT_NOT_VERIFIED")
+	ErrAccountSuspended   = errors.New("ACCOUNT_SUSPENDED")
+)
+
 type AuthService interface {
 	Register(req *models.RegisterRequest) (*models.RegisterResponseData, error)
 	Login(req *models.LoginRequest) (*models.LoginResponseData, error)
@@ -159,20 +165,20 @@ func (s *authService) Login(req *models.LoginRequest) (*models.LoginResponseData
 	// 1. Find user by phone or email
 	user, err := s.repo.FindByUsername(req.Username)
 	if err != nil {
-		return nil, errors.New("invalid username or password")
+		return nil, ErrInvalidCredentials
 	}
 
 	// 2. Check credentials
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		return nil, errors.New("invalid username or password")
+		return nil, ErrInvalidCredentials
 	}
 
 	// 3. Check status & is_active
 	if !user.IsActive {
-		return nil, errors.New("user account is inactive")
+		return nil, ErrAccountSuspended
 	}
 	if user.Status == "PENDING_VERIFY" {
-		return nil, errors.New("user account is pending verification")
+		return nil, ErrAccountNotVerified
 	}
 
 	// 4. Prepare Roles
