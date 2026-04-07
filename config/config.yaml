@@ -1,0 +1,16 @@
+app:
+  name: "menii-auth"
+  port: 8080
+  env: "development"
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "password"
+  dbname: "menii_auth"
+  sslmode: "disable"
+
+jwt:
+  secret: "your-super-secret-key"
+  expiry_hours: 24
