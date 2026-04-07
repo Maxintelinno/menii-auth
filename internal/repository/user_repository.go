@@ -18,6 +18,8 @@ type UserRepository interface {
 	GetRoleByCode(code string) (*models.Role, error)
 	UpdateLastLogin(userID uuid.UUID) error
 	CreateSession(session *models.UserSession) error
+	FindSessionByID(id uuid.UUID) (*models.UserSession, error)
+	UpdateSession(session *models.UserSession) error
 	RevokeSession(sessionID uuid.UUID, reason string) error
 	WithTx(tx *gorm.DB) UserRepository
 }
@@ -94,4 +96,16 @@ func (r *userRepository) RevokeSession(sessionID uuid.UUID, reason string) error
 			"revoked_at":    time.Now(),
 			"revoke_reason": reason,
 		}).Error
+}
+
+func (r *userRepository) FindSessionByID(id uuid.UUID) (*models.UserSession, error) {
+	var session models.UserSession
+	if err := r.db.Preload("User.Roles").First(&session, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+func (r *userRepository) UpdateSession(session *models.UserSession) error {
+	return r.db.Save(session).Error
 }

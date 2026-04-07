@@ -67,12 +67,13 @@ func main() {
 	{
 		auth.POST("/register", authHandler.Register)
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/refresh", authHandler.Refresh)
 		auth.POST("/logout", authHandler.Logout, appMiddleware.JWTMiddleware(&cfg.JWT))
 	}
 
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.App.Port)
-	log.Info("Starting server on " + addr)
+	fmt.Println("Starting server on " + addr)
 	if err := e.Start(addr); err != nil {
 		log.Fatal("Server failed to start")
 	}

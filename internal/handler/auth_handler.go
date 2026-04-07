@@ -130,3 +130,47 @@ func (h *AuthHandler) Logout(c echo.Context) error {
 		},
 	})
 }
+
+func (h *AuthHandler) Refresh(c echo.Context) error {
+	req := new(models.RefreshRequest)
+	if err := c.Bind(req); err != nil {
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "INVALID_REQUEST",
+			Message: "invalid request body",
+		})
+	}
+
+	if err := h.validate.Struct(req); err != nil {
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: err.Error(),
+		})
+	}
+
+	res, err := h.svc.RefreshToken(req)
+	if err != nil {
+		switch err {
+		case service.ErrInvalidRefreshToken:
+			return c.JSON(http.StatusUnauthorized, models.APIResponse{
+				Code:    "INVALID_REFRESH_TOKEN",
+				Message: "invalid refresh token",
+			})
+		case service.ErrSessionExpired:
+			return c.JSON(http.StatusUnauthorized, models.APIResponse{
+				Code:    "SESSION_EXPIRED",
+				Message: "session expired",
+			})
+		default:
+			return c.JSON(http.StatusInternalServerError, models.APIResponse{
+				Code:    "ERROR",
+				Message: err.Error(),
+			})
+		}
+	}
+
+	return c.JSON(http.StatusOK, models.APIResponse{
+		Code:    "SUCCESS",
+		Message: "token refreshed",
+		Data:    res,
+	})
+}

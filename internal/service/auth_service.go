@@ -22,15 +22,18 @@ import (
 )
 
 var (
-	ErrInvalidCredentials = errors.New("INVALID_CREDENTIALS")
-	ErrAccountNotVerified = errors.New("ACCOUNT_NOT_VERIFIED")
-	ErrAccountSuspended   = errors.New("ACCOUNT_SUSPENDED")
+	ErrInvalidCredentials  = errors.New("INVALID_CREDENTIALS")
+	ErrAccountNotVerified  = errors.New("ACCOUNT_NOT_VERIFIED")
+	ErrAccountSuspended    = errors.New("ACCOUNT_SUSPENDED")
+	ErrInvalidRefreshToken = errors.New("INVALID_REFRESH_TOKEN")
+	ErrSessionExpired      = errors.New("SESSION_EXPIRED")
 )
 
 type AuthService interface {
 	Register(req *models.RegisterRequest) (*models.RegisterResponseData, error)
 	Login(req *models.LoginRequest) (*models.LoginResponseData, error)
 	Logout(sessionID uuid.UUID) error
+	RefreshToken(req *models.RefreshRequest) (*models.LoginResponseData, error)
 }
 
 type authService struct {
@@ -245,6 +248,108 @@ func (s *authService) Login(req *models.LoginRequest) (*models.LoginResponseData
 
 func (s *authService) Logout(sessionID uuid.UUID) error {
 	return s.repo.RevokeSession(sessionID, "USER_LOGOUT")
+}
+
+func (s *authService) RefreshToken(req *models.RefreshRequest) (*models.LoginResponseData, error) {
+	// 1. Parse Token
+	token, err := jwt.Parse(req.RefreshToken, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(s.config.Secret), nil
+	})
+
+	if err != nil || !token.Valid {
+		return nil, ErrInvalidRefreshToken
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, ErrInvalidRefreshToken
+	}
+
+	// 2. Check Type & Session
+	tokenType, _ := claims["token_type"].(string)
+	if tokenType != "refresh" {
+		return nil, ErrInvalidRefreshToken
+	}
+
+	sessionIDStr, _ := claims["session_id"].(string)
+	sessionID, err := uuid.Parse(sessionIDStr)
+	if err != nil {
+		return nil, ErrInvalidRefreshToken
+	}
+
+	session, err := s.repo.FindSessionByID(sessionID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidRefreshToken
+		}
+		return nil, err
+	}
+
+	// 3. Guards
+	if session.RevokedAt != nil {
+		return nil, ErrInvalidRefreshToken
+	}
+	if time.Now().After(session.ExpiredAt) {
+		return nil, ErrSessionExpired
+	}
+
+	// 4. Verify Hash
+	providedHash := hashRefreshToken(req.RefreshToken)
+	if session.RefreshTokenHash != providedHash {
+		// Possibly token theft (reuse of old token)
+		_ = s.repo.RevokeSession(sessionID, "TOKEN_REUSE_DETECTED")
+		return nil, ErrInvalidRefreshToken
+	}
+
+	// 5. Rotate & Issue New Tokens
+	roleCodes := make([]string, len(session.User.Roles))
+	for i, r := range session.User.Roles {
+		roleCodes[i] = r.Code
+	}
+
+	newAccessToken, err := s.generateToken(session.UserID, session.ID, "access", roleCodes, 15*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	newRefreshToken, err := s.generateToken(session.UserID, session.ID, "refresh", nil, 30*24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+
+	// 6. Update Session in DB (Rotate Hash)
+	session.RefreshTokenHash = hashRefreshToken(newRefreshToken)
+	session.LastUsedAt = time.Now()
+	// Optionally update ExpiredAt? User suggested 30 days.
+	// session.ExpiredAt = time.Now().Add(30 * 24 * time.Hour)
+
+	if err := s.repo.UpdateSession(session); err != nil {
+		return nil, err
+	}
+
+	// 7. Response
+	res := &models.LoginResponseData{
+		User: models.UserInfoResponse{
+			UserID: session.UserID,
+			Phone:  *session.User.Phone,
+			Status: session.User.Status,
+			Roles:  roleCodes,
+		},
+		Tokens: models.TokensResponse{
+			AccessToken:      newAccessToken,
+			RefreshToken:     newRefreshToken,
+			TokenType:        "Bearer",
+			ExpiresIn:        900,
+			RefreshExpiresIn: 2592000,
+		},
+	}
+	if session.User.Email != nil {
+		res.User.Email = *session.User.Email
+	}
+
+	return res, nil
 }
 
 func (s *authService) generateToken(userID, sessionID uuid.UUID, tokenType string, roles []string, duration time.Duration) (string, error) {
