@@ -36,6 +36,11 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
 }
 
+type ForgotPasswordRequest struct {
+	Phone string `json:"phone" validate:"required_without=Email"`
+	Email string `json:"email" validate:"required_without=Phone,omitempty,email"`
+}
+
 type LogoutRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }

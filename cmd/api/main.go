@@ -70,6 +70,7 @@ func main() {
 		auth.POST("/refresh", authHandler.Refresh)
 		auth.POST("/request-otp", authHandler.RequestOTP)
 		auth.POST("/verify-otp", authHandler.VerifyOTP)
+		auth.POST("/forgot-password", authHandler.ForgotPassword)
 		auth.POST("/logout", authHandler.Logout, appMiddleware.JWTMiddleware(&cfg.JWT))
 	}
 

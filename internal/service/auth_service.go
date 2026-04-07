@@ -48,6 +48,7 @@ type AuthService interface {
 	RefreshToken(req *models.RefreshRequest) (*models.LoginResponseData, error)
 	RequestOTP(req *models.OtpRequestPayload) (*models.OtpResponseData, error)
 	VerifyOTP(req *models.VerifyOtpRequest) (*models.VerifyOtpResponseData, error)
+	ForgotPassword(req *models.ForgotPasswordRequest) (*models.OtpResponseData, error)
 }
 
 type authService struct {
@@ -517,6 +518,37 @@ func (s *authService) generateToken(userID, sessionID uuid.UUID, tokenType strin
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.config.Secret))
+}
+
+func (s *authService) ForgotPassword(req *models.ForgotPasswordRequest) (*models.OtpResponseData, error) {
+	var user *models.User
+	var err error
+	var identifier string
+
+	// 1. Identify contact
+	if req.Phone != "" {
+		identifier = req.Phone
+		user, err = s.repo.FindByPhone(req.Phone)
+	} else if req.Email != "" {
+		identifier = req.Email
+		user, err = s.repo.FindByEmail(req.Email)
+	}
+
+	// 2. Security: Generic success if user not found
+	if err != nil || user == nil {
+		logger.GetLogger().Info("ForgotPassword: User not found for " + identifier + ". Returning generic success.")
+		return &models.OtpResponseData{
+			ReferenceCode: "OTP-" + hex.EncodeToString([]byte(identifier))[:6], // Stable but fake ref
+			ExpiresInSec:  300,
+			RetryAfterSec: 60,
+		}, nil
+	}
+
+	// 3. Trigger OTP flow
+	return s.RequestOTP(&models.OtpRequestPayload{
+		Phone:   *user.Phone,
+		Purpose: "FORGOT_PASSWORD",
+	})
 }
 
 // Helpers

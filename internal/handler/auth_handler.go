@@ -272,3 +272,34 @@ func (h *AuthHandler) VerifyOTP(c echo.Context) error {
 		Data:    res,
 	})
 }
+
+func (h *AuthHandler) ForgotPassword(c echo.Context) error {
+	req := new(models.ForgotPasswordRequest)
+	if err := c.Bind(req); err != nil {
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "INVALID_REQUEST",
+			Message: "invalid request body",
+		})
+	}
+
+	if err := h.validate.Struct(req); err != nil {
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: err.Error(),
+		})
+	}
+
+	res, err := h.svc.ForgotPassword(req)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, models.APIResponse{
+			Code:    "ERROR",
+			Message: err.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusOK, models.APIResponse{
+		Code:    "SUCCESS",
+		Message: "password reset otp sent",
+		Data:    res,
+	})
+}
