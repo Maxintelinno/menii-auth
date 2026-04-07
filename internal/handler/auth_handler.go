@@ -7,6 +7,7 @@ import (
 	"menii-auth/internal/service"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -102,5 +103,30 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		Code:    "SUCCESS",
 		Message: "login success",
 		Data:    res,
+	})
+}
+
+func (h *AuthHandler) Logout(c echo.Context) error {
+	sessionID, ok := c.Get("session_id").(uuid.UUID)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, models.APIResponse{
+			Code:    "UNAUTHORIZED",
+			Message: "invalid session",
+		})
+	}
+
+	if err := h.svc.Logout(sessionID); err != nil {
+		return c.JSON(http.StatusInternalServerError, models.APIResponse{
+			Code:    "ERROR",
+			Message: err.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusOK, models.APIResponse{
+		Code:    "SUCCESS",
+		Message: "logout success",
+		Data: map[string]bool{
+			"logged_out": true,
+		},
 	})
 }

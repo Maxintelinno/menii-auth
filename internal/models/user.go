@@ -32,6 +32,10 @@ type LoginRequest struct {
 	Platform   string `json:"platform"`
 }
 
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
 type RegisterRequest struct {
 	Phone           string `json:"phone" validate:"required"`
 	Email           string `json:"email" validate:"omitempty,email"`

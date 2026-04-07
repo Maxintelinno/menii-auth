@@ -30,6 +30,7 @@ var (
 type AuthService interface {
 	Register(req *models.RegisterRequest) (*models.RegisterResponseData, error)
 	Login(req *models.LoginRequest) (*models.LoginResponseData, error)
+	Logout(sessionID uuid.UUID) error
 }
 
 type authService struct {
@@ -240,6 +241,10 @@ func (s *authService) Login(req *models.LoginRequest) (*models.LoginResponseData
 	}
 
 	return res, nil
+}
+
+func (s *authService) Logout(sessionID uuid.UUID) error {
+	return s.repo.RevokeSession(sessionID, "USER_LOGOUT")
 }
 
 func (s *authService) generateToken(userID, sessionID uuid.UUID, tokenType string, roles []string, duration time.Duration) (string, error) {

@@ -6,6 +6,7 @@ import (
 
 	"menii-auth/config"
 	"menii-auth/internal/handler"
+	appMiddleware "menii-auth/internal/middleware"
 	"menii-auth/internal/models"
 	"menii-auth/internal/repository"
 	"menii-auth/internal/service"
@@ -66,6 +67,7 @@ func main() {
 	{
 		auth.POST("/register", authHandler.Register)
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/logout", authHandler.Logout, appMiddleware.JWTMiddleware(&cfg.JWT))
 	}
 
 	// Start server
