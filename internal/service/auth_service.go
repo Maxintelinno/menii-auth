@@ -33,9 +33,12 @@ var (
 	ErrInvalidCredentials  = errors.New("INVALID_CREDENTIALS")
 	ErrAccountNotVerified  = errors.New("ACCOUNT_NOT_VERIFIED")
 	ErrAccountSuspended    = errors.New("ACCOUNT_SUSPENDED")
-	ErrInvalidRefreshToken = errors.New("INVALID_REFRESH_TOKEN")
-	ErrSessionExpired      = errors.New("SESSION_EXPIRED")
-	ErrUserNotFound        = errors.New("USER_NOT_FOUND")
+	ErrInvalidRefreshToken   = errors.New("INVALID_REFRESH_TOKEN")
+	ErrSessionExpired        = errors.New("SESSION_EXPIRED")
+	ErrUserNotFound          = errors.New("USER_NOT_FOUND")
+	ErrOtpExpired            = errors.New("OTP_EXPIRED")
+	ErrOtpInvalid            = errors.New("OTP_INVALID")
+	ErrOtpMaxAttemptsExceeded = errors.New("OTP_MAX_ATTEMPTS_EXCEEDED")
 )
 
 type AuthService interface {
@@ -44,6 +47,7 @@ type AuthService interface {
 	Logout(sessionID uuid.UUID) error
 	RefreshToken(req *models.RefreshRequest) (*models.LoginResponseData, error)
 	RequestOTP(req *models.OtpRequestPayload) (*models.OtpResponseData, error)
+	VerifyOTP(req *models.VerifyOtpRequest) (*models.VerifyOtpResponseData, error)
 }
 
 type authService struct {
@@ -424,13 +428,87 @@ func (s *authService) RequestOTP(req *models.OtpRequestPayload) (*models.OtpResp
 	}, nil
 }
 
+func (s *authService) VerifyOTP(req *models.VerifyOtpRequest) (*models.VerifyOtpResponseData, error) {
+	// 1. Find OTP Request
+	otp, err := s.repo.FindByReferenceCode(req.ReferenceCode)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrOtpInvalid
+		}
+		return nil, err
+	}
+
+	// 2. Initial Checks
+	if otp.RequestStatus != "PENDING" {
+		return nil, ErrOtpInvalid
+	}
+	if time.Now().After(otp.ExpiredAt) {
+		otp.RequestStatus = "EXPIRED"
+		_ = s.repo.UpdateOtpRequest(otp)
+		return nil, ErrOtpExpired
+	}
+	if otp.AttemptCount >= otp.MaxAttempt {
+		return nil, ErrOtpMaxAttemptsExceeded
+	}
+
+	// 3. Compare OTP Code
+	if err := bcrypt.CompareHashAndPassword([]byte(otp.OtpCodeHash), []byte(req.OtpCode)); err != nil {
+		otp.AttemptCount++
+		if otp.AttemptCount >= otp.MaxAttempt {
+			otp.RequestStatus = "FAILED"
+		}
+		_ = s.repo.UpdateOtpRequest(otp)
+		return nil, ErrOtpInvalid
+	}
+
+	// 4. Verification Success
+	now := time.Now()
+	otp.VerifiedAt = &now
+	otp.RequestStatus = "VERIFIED"
+	if err := s.repo.UpdateOtpRequest(otp); err != nil {
+		return nil, err
+	}
+
+	res := &models.VerifyOtpResponseData{
+		Verified: true,
+		Purpose:  otp.Purpose,
+		UserID:   otp.TargetUserID,
+	}
+
+	// 5. Purpose-based logic
+	switch otp.Purpose {
+	case "REGISTER":
+		// Update user status
+		if err := s.repo.UpdateUserStatus(otp.TargetUserID, "ACTIVE"); err != nil {
+			return nil, err
+		}
+		res.AccountStatus = "ACTIVE"
+	case "FORGOT_PASSWORD":
+		// Generate temporary reset token (no session_id)
+		resetToken, err := s.generateToken(otp.TargetUserID, uuid.Nil, "reset", nil, 15*time.Minute)
+		if err != nil {
+			return nil, err
+		}
+		res.ResetToken = resetToken
+		res.ResetTokenExpiresIn = 900
+	case "PHONE_VERIFY":
+		// Possibly mark phone as verified in profile
+		// (Assume logic done for now)
+	}
+
+	return res, nil
+}
+
 func (s *authService) generateToken(userID, sessionID uuid.UUID, tokenType string, roles []string, duration time.Duration) (string, error) {
 	claims := jwt.MapClaims{
 		"sub":        userID.String(),
-		"session_id": sessionID.String(),
 		"token_type": tokenType,
 		"iat":        time.Now().Unix(),
 		"exp":        time.Now().Add(duration).Unix(),
+	}
+
+	if sessionID != uuid.Nil {
+		claims["session_id"] = sessionID.String()
 	}
 
 	if roles != nil {

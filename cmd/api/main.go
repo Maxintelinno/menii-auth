@@ -69,6 +69,7 @@ func main() {
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/refresh", authHandler.Refresh)
 		auth.POST("/request-otp", authHandler.RequestOTP)
+		auth.POST("/verify-otp", authHandler.VerifyOTP)
 		auth.POST("/logout", authHandler.Logout, appMiddleware.JWTMiddleware(&cfg.JWT))
 	}
 

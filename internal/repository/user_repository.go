@@ -22,6 +22,9 @@ type UserRepository interface {
 	UpdateSession(session *models.UserSession) error
 	GetLatestOtpRequest(phone string, purpose string) (*models.OtpRequest, error)
 	CountOtpRequestsToday(phone string) (int64, error)
+	FindByReferenceCode(code string) (*models.OtpRequest, error)
+	UpdateOtpRequest(otp *models.OtpRequest) error
+	UpdateUserStatus(userID uuid.UUID, status string) error
 	RevokeSession(sessionID uuid.UUID, reason string) error
 	WithTx(tx *gorm.DB) UserRepository
 }
@@ -130,4 +133,20 @@ func (r *userRepository) CountOtpRequestsToday(phone string) (int64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func (r *userRepository) FindByReferenceCode(code string) (*models.OtpRequest, error) {
+	var otp models.OtpRequest
+	if err := r.db.Where("reference_code = ?", code).First(&otp).Error; err != nil {
+		return nil, err
+	}
+	return &otp, nil
+}
+
+func (r *userRepository) UpdateOtpRequest(otp *models.OtpRequest) error {
+	return r.db.Save(otp).Error
+}
+
+func (r *userRepository) UpdateUserStatus(userID uuid.UUID, status string) error {
+	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("status", status).Error
 }

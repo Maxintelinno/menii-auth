@@ -51,6 +51,20 @@ type OtpResponseData struct {
 	RetryAfterSec int    `json:"retry_after_sec"`
 }
 
+type VerifyOtpRequest struct {
+	ReferenceCode string `json:"reference_code" validate:"required"`
+	OtpCode       string `json:"otp_code" validate:"required,len=6"`
+}
+
+type VerifyOtpResponseData struct {
+	Verified             bool      `json:"verified"`
+	Purpose              string    `json:"purpose"`
+	UserID               uuid.UUID `json:"user_id,omitempty"`
+	AccountStatus        string    `json:"account_status,omitempty"`
+	ResetToken           string    `json:"reset_token,omitempty"`
+	ResetTokenExpiresIn  int       `json:"reset_token_expires_in,omitempty"`
+}
+
 type RegisterRequest struct {
 	Phone           string `json:"phone" validate:"required"`
 	Email           string `json:"email" validate:"omitempty,email"`

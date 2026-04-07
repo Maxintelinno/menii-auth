@@ -223,3 +223,52 @@ func (h *AuthHandler) RequestOTP(c echo.Context) error {
 		Data:    res,
 	})
 }
+
+func (h *AuthHandler) VerifyOTP(c echo.Context) error {
+	req := new(models.VerifyOtpRequest)
+	if err := c.Bind(req); err != nil {
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "INVALID_REQUEST",
+			Message: "invalid request body",
+		})
+	}
+
+	if err := h.validate.Struct(req); err != nil {
+		return c.JSON(http.StatusBadRequest, models.APIResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: err.Error(),
+		})
+	}
+
+	res, err := h.svc.VerifyOTP(req)
+	if err != nil {
+		switch err {
+		case service.ErrOtpExpired:
+			return c.JSON(http.StatusGone, models.APIResponse{
+				Code:    "OTP_EXPIRED",
+				Message: "otp expired",
+			})
+		case service.ErrOtpInvalid:
+			return c.JSON(http.StatusUnauthorized, models.APIResponse{
+				Code:    "OTP_INVALID",
+				Message: "invalid otp",
+			})
+		case service.ErrOtpMaxAttemptsExceeded:
+			return c.JSON(http.StatusForbidden, models.APIResponse{
+				Code:    "OTP_MAX_ATTEMPTS_EXCEEDED",
+				Message: "otp verification failed",
+			})
+		default:
+			return c.JSON(http.StatusInternalServerError, models.APIResponse{
+				Code:    "ERROR",
+				Message: err.Error(),
+			})
+		}
+	}
+
+	return c.JSON(http.StatusOK, models.APIResponse{
+		Code:    "SUCCESS",
+		Message: "otp verified",
+		Data:    res,
+	})
+}
